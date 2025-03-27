@@ -2,7 +2,7 @@ use draw::{render, Canvas, Color, Drawing, LineBuilder, Style, SvgRenderer};
 use rand::Rng;
 
 fn smoothed_noise(x: i32) -> f64 {
-    (x % 10) as f64 / 10.0
+    noise(x) / 2.0 + noise(x - 1) / 4.0 + noise(x + 1) / 4.0
 }
 
 fn linear_interpolation(a: f64, b: f64, t: f64) -> f64 {
@@ -23,6 +23,19 @@ pub fn noise(x: i32) -> f64 {
     let x: i32 = (x << 13) ^ x;
     1.0 - (((x as i64 * (x as i64 * x as i64 * 15731 + 789221) + 1376312589) & 0x7FFFFFFF) as f64
         / 1073741824.0)
+}
+
+fn perlin_noise_1d(x: f64, persistence: f64, num_octaves: u32) -> f64 {
+    let mut total = 0.0;
+
+    for i in 0..num_octaves {
+        let frequency = 2f64.powi(i as i32);
+        let amplitude = persistence.powi(i as i32);
+
+        total += interpolate_noise(x * frequency) * amplitude;
+    }
+
+    total
 }
 
 fn main() {
