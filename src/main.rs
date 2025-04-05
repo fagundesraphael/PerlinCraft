@@ -1,63 +1,58 @@
-use draw::{render, Canvas, Color, Drawing, LineBuilder, Style, SvgRenderer};
+use plotters::{chart::ChartBuilder, prelude::{BitMapBackend, IntoDrawingArea}, series::LineSeries, style::{BLACK, WHITE}};
 use rand::Rng;
 
-fn smoothed_noise(x: i32) -> f64 {
-    noise(x) / 2.0 + noise(x - 1) / 4.0 + noise(x + 1) / 4.0
+fn fade(t: f32) -> f32 {
+    t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
 }
 
-fn linear_interpolation(a: f64, b: f64, t: f64) -> f64 {
-    a + t * (b - a)
+fn grad(p: i32, gradients: &[i32; 256]) -> i32 {
+    gradients[(p as usize) % 256]
 }
 
-fn interpolate_noise(x: f64) -> f64 {
-    let integer_x = x as i32;
-    let fractional_x = x - integer_x as f64;
 
-    let v1 = smoothed_noise(integer_x);
-    let v2 = smoothed_noise(integer_x + 1);
+pub fn noise(p: f32, gradients: &[i32; 256]) -> f32 {
+    let p0 = p.floor() as i32;
+    let p1 = p0 + 1;
 
-    linear_interpolation(v1, v2, fractional_x)
+    let t = p - p0 as f32;
+    let fade_t = fade(t);
+
+    let g0 = grad(p0, gradients) as f32;
+    let g1 = grad(p1, gradients) as f32;
+
+    let d0 = g0 * (p - p0 as f32);
+    let d1 = g1 * (p - p1 as f32);
+
+    (1.0 - fade_t) * d0 + fade_t * d1
 }
 
-pub fn noise(x: i32) -> f64 {
-    let x: i32 = (x << 13) ^ x;
-    1.0 - (((x as i64 * (x as i64 * x as i64 * 15731 + 789221) + 1376312589) & 0x7FFFFFFF) as f64
-        / 1073741824.0)
-}
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let root = BitMapBackend::new("perlin_noise_graph_1d.png", (800, 800)).into_drawing_area();
+    root.fill(&WHITE)?;
 
-fn perlin_noise_1d(x: f64, persistence: f64, num_octaves: u32) -> f64 {
-    let mut total = 0.0;
+    let mut chart = ChartBuilder::on(&root)
+        .caption("Perlin Noise 1D", ("sans-serif", 30))
+        .margin(10)
+        .x_label_area_size(30)
+        .y_label_area_size(30)
+        .build_cartesian_2d(0.0..100.0, -4.2..4.2)?;
 
-    for i in 0..num_octaves {
-        let frequency = 2f64.powi(i as i32);
-        let amplitude = persistence.powi(i as i32);
+    chart.configure_mesh().draw()?;
 
-        total += interpolate_noise(x * frequency) * amplitude;
-    }
+    let mut gradients = [0; 256];
+    let mut rng = rand::rng();
+    (0..256).for_each(|i| {
+        gradients[i] = if rng.random::<bool>() { 1 } else { -1 };
+    });
 
-    total
-}
+    chart.draw_series(LineSeries::new(
+        (0..1000).map(|i| {
+            let x = i as f64 * 0.1;
+            let y = noise(x as f32, &gradients) as f64;
+            (x, y)
+        }),
+        &BLACK,
+    ))?;
 
-fn main() {
-    let mut canvas = Canvas::new(400, 400);
-    let mut rand = rand::rng();
-
-    for i in 0..5 {
-        let cordy = rand.random_range(i as f32..100.0);
-        let cordx = rand.random_range(0.0..200.0);
-        let length = rand.random_range(50.0..200.0);
-
-        let line = LineBuilder::new(cordx, cordy)
-            //.curve_to(50.0, 50.0, 20.0, 30.0)
-            .line_to(cordx + length, cordy)
-            .build();
-
-        let drawing = Drawing::new()
-            .with_shape(line)
-            .with_style(Style::stroked(2, Color::black()));
-
-        canvas.display_list.add(drawing);
-    }
-
-    render::save(&canvas, "img/grap.jpeg", SvgRenderer::new()).expect("Failed to save")
+    Ok(())
 }
